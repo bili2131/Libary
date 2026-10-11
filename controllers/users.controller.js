@@ -18,6 +18,7 @@ export const registerUser = (req, res) => {
 
     const newId = db.users.length > 0 ? Math.max(...db.users.map(u => u.id)) + 1 : 101;
     
+    
     const newUser = {
         id: newId,
         name,
