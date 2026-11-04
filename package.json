@@ -1,15 +1,20 @@
 {
   "name": "libary",
   "version": "1.0.0",
+  "type": "module",
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "node --env-file-if-exists=.env app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^5.2.1"
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mongoose": "^9.11.4",
+    "morgan": "^1.12.1"
   }
 }

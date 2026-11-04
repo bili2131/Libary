@@ -1,4 +1,4 @@
-import { db } from '../db.js';
+import { db } from '../config/db.js';
 
 export const getUsers = (req, res) => {
     res.status(200).json(db.users);

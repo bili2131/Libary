@@ -1,158 +1,185 @@
-import { db } from '../db.js';
+import Book from "../models/book.model.js";
+import User from "../models/user.model.js";
 
-export const getBooks = (req, res) => {
-    let result = db.books;
+// קבלת כל הספרים (כולל חיפוש ופגינציה)
+export const getBooks = async (req, res, next) => {
+    try {
+        const filter = {};
 
-    // חיפוש לפי שם ספר (אם נשלח פרמטר search)
-    if (req.query.search) {
-        const searchTerm = req.query.search.toLowerCase();
-        result = result.filter(b => b.name.toLowerCase().includes(searchTerm));
+        // חיפוש לפי שם ספר (אם נשלח פרמטר search)
+        if (req.query.search) {
+            filter.name = { $regex: req.query.search, $options: 'i' };
+        }
+
+        // Pagination - ברירת מחדל: page = 1, limit = 5
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 5;
+        const skip = (page - 1) * limit;
+
+        const total = await Book.countDocuments(filter);
+        const books = await Book.find(filter).skip(skip).limit(limit);
+
+        res.status(200).json({
+            page,
+            limit,
+            total,
+            books
+        });
+    } catch (err) {
+        return next(err);
     }
-
-    // Pagination - ברירת מחדל: page = 1, limit = 5
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 5;
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
-
-    const paginatedBooks = result.slice(startIndex, endIndex);
-
-    // מחזיר אובייקט מסודר עם מטא-דאטה והספרים
-    res.status(200).json({
-        page,
-        limit,
-        total: result.length,
-        books: paginatedBooks
-    });
 };
 
-export const getBookById = (req, res) => {
-    const id = +req.params.id;
-    const book = db.books.find(b => b.id === id);
-    if (!book) {
-        return res.status(404).json({ error: "Book not found" });
+// קבלת ספר לפי ID
+export const getBookById = async (req, res, next) => {
+    const id = req.params.id;
+
+    try {
+        const book = await Book.findById(id);
+        if (!book) {
+            return next({
+                error: new Error('Book not found'),
+                status: 404
+            });
+        }
+        res.status(200).json(book);
+    } catch (err) {
+        return next(err);
     }
-    res.status(200).json(book);
 };
 
-export const createBook = (req, res) => {
-    const { name, category, price, isBorrowed } = req.body;
-    if (!name || !category || price === undefined) {
+// יצירת ספר חדש
+export const createBook = async (req, res, next) => {
+    const { name, categories, price } = req.body;
+
+    if (!name || !Array.isArray(categories) || categories.length === 0 || price === undefined) {
         return res.status(400).json({ error: "Missing required book fields" });
     }
 
-    const newId = db.books.length > 0 ? Math.max(...db.books.map(b => b.id)) + 1 : 1;
-    const newBook = {
-        id: newId,
-        name,
-        category,
-        price,
-        isBorrowed: isBorrowed !== undefined ? isBorrowed : false
-    };
-
-    db.books.push(newBook);
-    res.status(201).json(newBook);
-};
-
-export const updateBook = (req, res) => {
-    const id = +req.params.id;
-    const book = db.books.find(b => b.id === id);
-    if (!book) {
-        return res.status(404).json({ error: "Book not found" });
+    try {
+        const newBook = new Book(req.body);
+        await newBook.save();
+        res.status(201).json(newBook);
+    } catch (err) {
+        return next(err);
     }
-
-    const { name, category, price, isBorrowed } = req.body;
-    if (name !== undefined) book.name = name;
-    if (category !== undefined) book.category = category;
-    if (price !== undefined) book.price = price;
-    if (isBorrowed !== undefined) book.isBorrowed = isBorrowed;
-
-    res.status(200).json(book);
 };
 
-export const createLoan = (req, res) => {
+// עדכון פרטי ספר
+export const updateBook = async (req, res, next) => {
+    const id = req.params.id;
+
+    try {
+        const updatedBook = await Book.findByIdAndUpdate(id, req.body, { new: true });
+
+        if (!updatedBook) {
+            return next({
+                error: new Error('Book not found'),
+                status: 404
+            });
+        }
+
+        res.status(200).json(updatedBook);
+    } catch (err) {
+        return next(err);
+    }
+};
+
+// ביצוע השאלת ספר
+export const createLoan = async (req, res, next) => {
     const { bookId, userId } = req.body;
+
     if (!bookId || !userId) {
         return res.status(400).json({ error: "bookId and userId are required" });
     }
 
-    const book = db.books.find(b => b.id === +bookId);
-    if (!book) {
-        return res.status(404).json({ error: "Book not found" });
-    }
-
-    if (book.isBorrowed) {
-        return res.status(400).json({ error: "Book is already borrowed" });
-    }
-
-    const user = db.users.find(u => u.id === +userId);
-    if (!user) {
-        return res.status(404).json({ error: "User not found" });
-    }
-
-    // 1. עדכון סטטוס הספר
-    book.isBorrowed = true;
-
-    // 2. הוספת הספר למערך הספרים המושאלים של המשתמש
-    if (!user.borrowedBooks.includes(+bookId)) {
-        user.borrowedBooks.push(+bookId);
-    }
-
-    // 3. הוספת תיעוד לטבלת ההשאלות
-    const newLoan = {
-        loanId: db.loans.length > 0 ? Math.max(...db.loans.map(l => l.loanId)) + 1 : 1,
-        borrowDate: new Date().toISOString().split('T')[0],
-        bookId: +bookId,
-        userId: +userId
-    };
-
-    db.loans.push(newLoan);
-    res.status(201).json({ message: "Loan completed successfully", loan: newLoan });
-};
-
-export const returnBook = (req, res) => {
-    const id = +req.params.id;
-    const book = db.books.find(b => b.id === id);
-    if (!book) {
-        return res.status(404).json({ error: "Book not found" });
-    }
-
-    if (!book.isBorrowed) {
-        return res.status(400).json({ error: "Book is not currently borrowed" });
-    }
-
-    // 1. עדכון סטטוס הספר
-    book.isBorrowed = false;
-
-    // 2. הסרת הספר ממערך borrowedBooks של המשתמש שמחזיק אותו
-    db.users.forEach(user => {
-        const bookIndex = user.borrowedBooks.indexOf(id);
-        if (bookIndex !== -1) {
-            user.borrowedBooks.splice(bookIndex, 1);
+    try {
+        const book = await Book.findById(bookId);
+        if (!book) {
+            return res.status(404).json({ error: "Book not found" });
         }
-    });
 
-    // 3. הסרת ההשאלה ממאגר ההשאלות הפעילות
-    db.loans = db.loans.filter(l => l.bookId !== id);
+        if (book.isBorrowed) {
+            return res.status(400).json({ error: "Book is already borrowed" });
+        }
 
-    res.status(200).json({ message: "Book returned successfully", book });
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // 1. עדכון סטטוס הספר למושאל
+        book.isBorrowed = true;
+        await book.save();
+
+        // 2. הוספת מזהה הספר למשתמש
+        if (!user.borrowedBooks.includes(bookId)) {
+            user.borrowedBooks.push(bookId);
+            await user.save();
+        }
+
+        res.status(201).json({
+            message: "Loan completed successfully",
+            bookId,
+            userId
+        });
+    } catch (err) {
+        return next(err);
+    }
 };
 
-export const deleteBook = (req, res) => {
-    const id = +req.params.id;
-    const initialLength = db.books.length;
-    db.books = db.books.filter(b => b.id !== id);
+// החזרת ספר
+export const returnBook = async (req, res, next) => {
+    const id = req.params.id;
 
-    if (db.books.length === initialLength) {
-        return res.status(404).json({ error: "Book not found" });
+    try {
+        const book = await Book.findById(id);
+        if (!book) {
+            return res.status(404).json({ error: "Book not found" });
+        }
+
+        if (!book.isBorrowed) {
+            return res.status(400).json({ error: "Book is not currently borrowed" });
+        }
+
+        // 1. עדכון סטטוס הספר
+        book.isBorrowed = false;
+        await book.save();
+
+        // 2. הסרת הספר מהמשתמש שמחזיק אותו ב-DB
+        await User.updateMany(
+            { borrowedBooks: id },
+            { $pull: { borrowedBooks: id } }
+        );
+
+        res.status(200).json({ message: "Book returned successfully", book });
+    } catch (err) {
+        return next(err);
     }
+};
 
-    // ניקוי נלווה
-    db.users.forEach(user => {
-        const index = user.borrowedBooks.indexOf(id);
-        if (index !== -1) user.borrowedBooks.splice(index, 1);
-    });
-    db.loans = db.loans.filter(l => l.bookId !== id);
+// מחיקת ספר
+export const deleteBook = async (req, res, next) => {
+    const id = req.params.id;
 
-    res.status(200).json({ message: "Book deleted successfully" });
+    try {
+        const deletedBook = await Book.findByIdAndDelete(id);
+
+        if (!deletedBook) {
+            return next({
+                error: new Error('Book not found'),
+                status: 404
+            });
+        }
+
+        // ניקוי המזהה של הספר מרשימות השאלה של משתמשים
+        await User.updateMany(
+            { borrowedBooks: id },
+            { $pull: { borrowedBooks: id } }
+        );
+
+        res.status(200).json({ message: "Book deleted successfully" });
+    } catch (err) {
+        return next({ err });
+    }
 };
