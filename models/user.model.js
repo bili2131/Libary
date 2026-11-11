@@ -1,10 +1,22 @@
-import { model, Schema } from 'mongoose';
+
+import { Schema, model } from 'mongoose';
+// User model schema for MongoDB using Mongoose
+// התקנת סיפריית BYcrypt לשם הצפנת סיסמאות
+import bcrypt from 'bcryptjs';
 
 const userSchema = new Schema({
-    name: String,
-    email: String,
-    password: String,
-    borrowedBooks: [{ type: Schema.Types.ObjectId, ref: 'books' }]
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  phone: { type: String, required: true },
+  address: { type: String, required: true }
 });
 
-export default model('users', userSchema);
+userSchema.pre('save', async function() {
+  const salt = await bcrypt.genSalt(10);
+  const hash= await bcrypt.hash(this.password, salt);
+  this.password = hash;
+
+});
+
+export default model('User', userSchema);
