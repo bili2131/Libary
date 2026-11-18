@@ -92,6 +92,10 @@ export const createLoan = async (req, res, next) => {
     if (!bookId || !userId) {
         return res.status(400).json({ error: "bookId and userId are required" });
     }
+        // מותר רק למנהל, או למשתמש שמשאיל לעצמו
+    if (req.user.role !== 'admin' && req.user.id !== userId) {
+        return res.status(403).json({ error: 'You can borrow books only for yourself.' });
+    }
 
     try {
         const book = await Book.findById(bookId);
