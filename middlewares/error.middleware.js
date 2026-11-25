@@ -6,11 +6,12 @@ export const notFoundHandler = (req, res, next) => {
     });
 };
 
-// מידלוור לטיפול בשגיאות שרת כלליות (500)
 export const errorHandler = (err, req, res, next) => {
-    const statusCode = err.statusCode || 500;
+    const statusCode = err.status || err.statusCode || 500;
     res.status(statusCode).json({
-        type: "server error",
-        error: err.message || "Internal server error"
+        type: statusCode < 500 ? "client error" : "server error",
+        error: err.message || err.error?.message || "Internal server error",
+        // אם יש רשימת שגיאות (מ-Joi) - מחזירים אותה
+        ...(err.errors && { errors: err.errors })
     });
 };
